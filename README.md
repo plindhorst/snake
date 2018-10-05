@@ -12,7 +12,7 @@ The aim of this project is to create a game of Snake, as seen in 1990’s Nokia 
 
 Graphics:
 Game area 84 x 48 pixels, scaled up by a factor of 4 to make it playable on a bigger screen
-Using the SDL library version 1.2
+Using the SDL library version 2
 Aim to recreate the original greenscale colors
 
 Sound:
