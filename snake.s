@@ -6,11 +6,15 @@
 
 main:
     pushq   %rbp
-    movq    %rsp, %rbp          # stack frame
+    movq    %rsp, %rbp
 
-    movl	$29233, %edi        # init everything
-	call	SDL_Init            # init call
-    call    SDL_Quit            # shut down sdl
+    # prepare to init everything
+    movl	$29233, %edi       
+    # init call
+    call	SDL_Init
+
+    # shut down sdl
+    call    SDL_Quit
 
 
     movq    $0, %rdi
