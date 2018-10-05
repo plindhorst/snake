@@ -5,7 +5,8 @@
 # Specification for Snake in x86_64 assembly
 
 
-
+Compile with:
+"gcc -g -o snake -lSDL2 -no-pie snake.s"
 
 The aim of this project is to create a game of Snake, as seen in 1990’s Nokia mobile phones. In this game a snake moves around a 2-dimensional, fixed map, and should not crash in the walls or itself. As well as the snake, there will be apples (one at a time) on the map. Moving the snake’s head over these apples will score the player points, but it will also make the snake grow.
 
