@@ -17,12 +17,12 @@
     startlength: .value 3
 
     # Window
-    window_title: .asciz "Snake"           # window title
+    window_title: .asciz "Snake"            # window title
     .equ window_height, 384                 # window height is 384
-    .equ window_width, 669                  # window width is 672
+    .equ window_width, 672                  # window width is 672
     .equ window_x, 536805376                # undefined
     .equ window_y, 536805376                # undefined
-    
+
 
 
 .macro INIT_GAME_AREA
@@ -117,7 +117,16 @@ main:
     # This returns a pointer to a window. Save it in r12 for use:
     movq    %rax, %r12
 
-
+    # Create renderer:
+    # SDL_CreateRenderer wants the window, index, and flags
+    # SDL_RENDER_ACCELERATED = 0x2
+    # First suitable rendering driver = -1
+    movq    %r12, %rdi
+    movl    $-1, %esi
+    movl    $0x2, %edx
+    call    SDL_CreateRenderer
+    # This returns a pointer to a renderer. Save it in r13:
+    movq    %rax, %r13
 
 
 
@@ -127,13 +136,15 @@ main:
     #INIT_SNAKE
     #DISPATCH_APPLE
 
-    #
-    # Draw stuff on canvas here
-    #
 
 
 
 
+
+
+
+
+    movq    $0, %rbx
 end:
     # For testing: wait for n loops
     incq    %rbx
@@ -142,6 +153,23 @@ end:
     jl      end
 
 
+    movq    $0, %rbx
+end2:
+    # For testing: wait for n loops
+    incq    %rbx
+    # 10^9 makes for a noticeable delay
+    cmpq    $2000000000, %rbx
+    jl      end2
+
+
+
+
+
+
+
+    # Destroy renderer
+    movq    %r13, %rdi
+    call    SDL_DestroyRenderer
     # Destroy window
     movq    %r12, %rdi
     call    SDL_DestroyWindow
