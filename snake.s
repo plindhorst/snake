@@ -1,23 +1,25 @@
 # Variables
 .data
+    # Contains the block number for the current apple
+    apple_block: .value 0
+    # Initialize last time with 0
+    last_time: .long 0
+    # Initialize direction with 0 (= right)
+    direction: .byte 0
 
 
 # Zero-initialized memory areas
 .bss
     # Active game area is 364 blocks (26 x 14)
-    gamearea: .skip 364
     # In addition to this, there are one block wide borders
     # So total area is 28 x 16 blocks = 672 x 384 px (scaled up x8)
+    # A block needs 2 bytes of storage
     # Maximum length of snake is the same as game area, queue needs +1:
-    snakequeue: .skip 365
+    snakequeue: .skip 730
 
 
 # Constants and program code
 .text
-    # Starting position: third row, third column, three-block snake
-    starthead: .value 765
-    startlength: .value 3
-
     # Window
     window_title: .asciz "Snake"            # window title
     .equ window_height, 384                 # window height is 384
@@ -35,9 +37,11 @@
     .equ blue, 23                           # drawing blue
     .equ alpha, 255                         # drawing opacity
 
+    # Starting position: third row, fourth column = 55
+    start_position: .word 55
+
 
 .macro DRAW_BLANK_SCREEN
-
     # Set color for background
     # SDL_SetRenderDrawColor wants the renderer, r, g, b, and a
     movq    %r13, %rdi
@@ -92,78 +96,49 @@
     movl    $352, 12(%rsp)              # h
     movq    %rsp, %rsi
     call    SDL_RenderFillRect          # Fill the rectangle
-
-.endm
-
-.macro INIT_GAME_AREA
-
-        # Build walls
-
-        # Top row:
-        # for i = 85 to 166 (inclusive), write 1 to gamearea[i]
-        movq    $85, %rbx
-        movq    $166, %rcx
-    top_loop:
-        movb    $1, gamearea(%rbx)
-        incq    %rbx
-        cmpq    %rcx, %rbx
-        jle     top_loop
-
-        # Bottom row:
-        # for i = 3865 to 3946 (inclusive)
-        movq    $3865, %rbx
-        movq    $3946, %rcx
-    bottom_loop:
-        movb    $1, gamearea(%rbx)
-        incq    %rbx
-        cmpq    %rcx, %rbx
-        jle     bottom_loop
-
-        # Left column:
-        # i = 169, for 44 times, increment by 84
-        movq    $169, %rbx
-        movq    $44, %rcx
-    left_loop:
-        movb    $1, gamearea(%rbx)
-        addq    $84, %rbx
-        decq    %rcx
-        cmpq    $0, %rcx
-        jg      left_loop
-
-        # Right column:
-        # i = 250, for 44 times, increment by 84
-        movq    $250, %rbx
-        movq    $44, %rcx
-    right_loop:
-        movb    $1, gamearea(%rbx)
-        addq    $84, %rbx
-        decq    %rcx
-        cmpq    $0, %rcx
-        jg      right_loop
-
 .endm
 
 
 .macro INIT_SNAKE
+    # The snakequeue variable should contain block numbers.
+    # Starting position: third row, third column, three-block snake
+    # The queue head is in r14, tail in r15
+    movl    $0, %r14d
+    movl    $0, %r15d
+
+    movw    $start_position, %dl
+    movw    %dl, snakequeue(%r15d)          # The first snake block
+    incw    %r15d                           # Update tail
+
+    subw    $1, %dl
+    movw    %dl, snakequeue(0, %r15d, 2)    # 2nd block
+    incw    %r15d
+
+    subw    $1, %dl
+    movw    %dl, snakequeue(0, %r15d, 2)    # 3rd block
+    incw    %r15d
+    # snakequeue should now contain a 3-block snake
+.endm
+
+
+.macro DRAW_SNAKE_BLOCK
 .endm
 
 
 .macro DISPATCH_APPLE
-    # Here we need some randomness.
-    # Apple can be on any block on game area that is not a snake block
+    # Set the apple_block to be some free block on the game area
+    # Here we need some randomness
     call    clock_gettime
     movq    %r9, %rax
     xor     %rdx, %rdx
     movq    $10, %rcx
     divq    %rcx
     # A random number 0 <= r <= 9 is in rdx now
-
 .endm
 
 
 
 .macro DRAW_GAME_TICK
-
     # Each game tick should:
     # A) search the keycode table for arrow keys,
     # B) detect possible crash,
@@ -177,8 +152,15 @@
     # F) Update screen
     movq    %r13, %rdi
     call    SDL_RenderPresent
-
 .endm
+
+
+
+
+
+
+
+
 
 
 
@@ -223,11 +205,9 @@ main:
     subq    $16, %rsp
 
     DRAW_BLANK_SCREEN
-
-    #INIT_GAME_AREA
     #INIT_SNAKE
     #DISPATCH_APPLE
-
+    DRAW_GAME_TICK
 
 loop:
     # Main game loop runs fast to detect keycodes
@@ -235,6 +215,27 @@ loop:
     # every #n time call the actual game tick macro
     # (#n depends on difficulty level)
 
+    # Get time
+    movq    $0, %rdi
+    call    SDL_GetTicks
+    # Compare to last time
+    movl    %eax, %ecx
+    subl    $1000, %ecx
+    cmpl    last_time, %ecx
+    jge     gametick
+    jmp     no_gametick
+
+    # Use rbx to store gametick flag
+gametick:
+    movb    $1, %bl
+    movl    %eax, last_time                 # Update last time
+    jmp     eventcheck
+
+no_gametick:
+    movl    $0, %ebx
+    jmp     eventcheck
+
+eventcheck:
     # Pump events
     movq    $0, %rdi
     call    SDL_PumpEvents
@@ -246,6 +247,7 @@ loop:
     # SDL_SCANCODE_LEFT = 80
     # SDL_SCANCODE_DOWN = 81
     # SDL_SCANCODE_UP = 82
+    # SDL_SCANCODE_ESCAPE = 41
     cmpb    $1, 79(%rax)
     je      right_pressed
     cmpb    $1, 80(%rax)
@@ -254,30 +256,38 @@ loop:
     je      down_pressed
     cmpb    $1, 82(%rax)
     je      up_pressed
-    jmp     check_game_tick
+    cmpb    $1, 41(%rax)
+    je      the_end
+    jmp     proceed
 
+    # Update direction vector
 right_pressed:
-    jmp     check_game_tick
+    movl    $0, direction
+    jmp     proceed
 left_pressed:
-    jmp     check_game_tick
+    movl    $1, direction
+    jmp     proceed
 down_pressed:
-    jmp     the_end
+    movl    $2, direction
+    jmp     proceed
 up_pressed:
-    jmp     check_game_tick
+    movl    $3, direction
+    jmp     proceed
 
 
-check_game_tick:
 
 
-    # Get time
-    # Divide time by amount of ns per tick
-    # Compare to previous amount, if greater then execute a game tick
 
+proceed:
+    # When time is right, execute a game tick
+    # Compare flag and if it's set, execute
+    cmpl    $1, %ebx
+    je      do_gametick
+    jmp     loop
+
+do_gametick:
     DRAW_BLANK_SCREEN
     DRAW_GAME_TICK
-
-
-
     jmp     loop
 
 
