@@ -106,22 +106,69 @@
     movl    $0, %r14d
     movl    $0, %r15d
 
-    movw    $start_position, %dl
-    movw    %dl, snakequeue(%r15d)          # The first snake block
-    incw    %r15d                           # Update tail
-
-    subw    $1, %dl
-    movw    %dl, snakequeue(0, %r15d, 2)    # 2nd block
-    incw    %r15d
-
-    subw    $1, %dl
-    movw    %dl, snakequeue(0, %r15d, 2)    # 3rd block
-    incw    %r15d
+    movw    start_position, %cx
+    subw    $2, %cx
+    ENQUEUE %cx
+    incw    %cx
+    ENQUEUE %cx
+    incw    %cx
+    ENQUEUE %cx
     # snakequeue should now contain a 3-block snake
 .endm
 
 
-.macro DRAW_SNAKE_BLOCK
+.macro ENQUEUE block
+    leaq    snakequeue(, %r15d, 2), %rdx
+    movw    \block, (%rdx)                      # Add block to the end
+    incl    %r15d                               # Update tail
+    cmpl    $364, %r15d                         # Check for overflow
+    jge     0f
+    jmp     1f
+0:
+    movl    $0, %r15d                           # Start from beginning
+1:
+.endm
+
+
+.macro DEQUEUE
+    incl    %r14d                               # Update head
+    cmpl    $364, %r14d                         # Check for overflow
+    jge     0f
+    jmp     1f
+0:
+    movl    $0, r14d                            # Start from beginning
+1:
+.endm
+
+
+.macro DRAW_SNAKE_BLOCK block
+    # This macro draws one 24 x 24 pixel block of snake
+    # Decoding of coordinates:
+    # Keep subbing 26 from the block number until it's under 26
+    # Number of these substractions is y (unscaled)
+    # The remaining number is x (unscaled)
+    movw    \block, %ax
+    movl    $0, %r8d
+    1:
+    cmpw    $26, %ax
+    jl      2f                          # Jump forwards in macro
+    subw    $26, %ax
+    addl    $24, %r8d
+    jmp     1b                          # Jump backwards in macro
+    2:
+    # Scaling: xScaled = 24 + 24*x, yScaled = 24 + 24*y
+    movl    $24, %ecx
+    mull    %ecx
+    addw    $24, %ax
+    addl    $24, %r8d
+
+    movq    %r13, %rdi                  # renderer
+    movw    %ax, (%rsp)                 # x
+    movl    %r8d, 4(%rsp)               # y
+    movl    $24, 8(%rsp)                # w
+    movl    $24, 12(%rsp)               # h
+    movq    %rsp, %rsi
+    call    SDL_RenderFillRect          # Fill the block
 .endm
 
 
@@ -150,8 +197,26 @@
 
 
     # F) Update screen
-    movq    %r13, %rdi
-    call    SDL_RenderPresent
+    # Forall (snakeblock) DRAW_SNAKE_BLOCK
+    # So: starting from the last block (queue head, oldest on screen),
+    # roam the snakequeue and draw all blocks.
+    movl    %r14d, %ebx
+3:
+    leaq    snakequeue(, %ebx, 2), %rdx
+    movw    (%rdx), %cx
+    DRAW_SNAKE_BLOCK    %cx
+    incl    %ebx
+    cmpl    $364, %ebx
+    jge     4f
+    cmpl    %r15d, %ebx
+    jge     5f
+    jmp     3b
+4:
+    movl    $0, %ebx
+    jmp     3b
+5:
+
+    # DRAW_APPLE
 .endm
 
 
@@ -205,9 +270,15 @@ main:
     subq    $16, %rsp
 
     DRAW_BLANK_SCREEN
-    #INIT_SNAKE
+    INIT_SNAKE
     #DISPATCH_APPLE
-    DRAW_GAME_TICK
+
+
+
+
+
+
+    #DRAW_GAME_TICK
 
 loop:
     # Main game loop runs fast to detect keycodes
@@ -288,6 +359,8 @@ proceed:
 do_gametick:
     DRAW_BLANK_SCREEN
     DRAW_GAME_TICK
+    movq    %r13, %rdi
+    call    SDL_RenderPresent
     jmp     loop
 
 
