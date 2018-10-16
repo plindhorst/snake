@@ -296,15 +296,109 @@
     # E) set a new apple and play a beep if it did eat now,
     # F) update the screen.
 
+<<<<<<< Updated upstream
     leaq    snakequeue(, %r14d, 2), %rdx
     movw    (%rdx), %ax                     # This is the current head
 
 
+=======
+    movl    %r15d, %eax
+    decl    %eax
+    leaq    snakequeue(, %eax, 2), %rdx
+    movw    (%rdx), %bx                     # This is the current head
+    movb    direction, %al                  # Where are we going
+
+    # A) Check direction
+    cmpb    $3, %al                         # Up
+    je      6f
+    cmpb    $2, %al                         # Down
+    je      7f
+    cmpb    $1, %al                         # Left
+    je      8f
+    cmpb    $0, %al                         # Right
+    je      9f
+    jmp     1f
+
+    # B) Labels 6-9: check if illegal direction for this head in %bx
+    # Forward to the_end if it is
+    # Otherwise calculate new position and let through
+6:
+    cmpw    $26, %bx                    # Top row, 0-25
+    jl      the_end
+    subw    $26, %bx
+    jmp     0f
+7:
+    cmpw    $337, %bx                   # Bottom row, 338-363
+    jg      the_end
+    addw    $26, %bx
+    jmp     0f
+8:
+    xorq    %rdx, %rdx
+    xorq    %rax, %rax
+    movq    %rbx, %rax
+    movq    $26, %rsi                   # Left column, multiples of 26
+    divq    %rsi
+    cmpq    $0, %rdx                    # Expect remainder to not be 0
+    je      the_end
+    subw    $1, %bx
+    jmp     0f
+9:
+    xorq    %rdx, %rdx
+    xorq    %rax, %rax
+    movq    %rbx, %rax
+    movq    $26, %rsi                   # Right column, multiples of 26
+    divq    %rsi                        # plus 25
+    cmpq    $25, %rdx                   # Expect remainder to not be 25
+    je      the_end
+    addw    $1, %bx
+    jmp     0f
+
+    # C) Remove tail if we didn't eat during the last tick
+    # If we did, just clear the no_tail_remove flag.
+0:
+    xorq    %rax, %rax
+    movb    no_tail_remove, %al
+    cmpb    $0, %al
+    je      1f
+    jmp     2f
+1:
+    # Didn't eat, remove tail
+    DEQUEUE
+    jmp     6f
+2:
+    # Did eat, clear the flag
+    movb    $0, no_tail_remove
+6:
+
+    # D) Check the new head and see if there was already a snake block
+    # Forward to the_end if there was
+    # Otherwise ENQUEUE and let through
+    xorq    %rax, %rax
+    movb    block_occupied(%rbx), %al
+    cmpb    $0, %al
+    jne     the_end
+    ENQUEUE %bx
+
+    # E) Check for apple under the new head
+    # Should there be one, dispatch a new one, play a beep, and raise
+    # the no_tail_remove flag for next tick
+    movw    apple_block, %cx                # Apple location
+    cmpw    %cx, %bx                        # Match with head
+    jne     2f
+    movq    $1, %rax
+    DISPATCH_APPLE
+    movq    $7, %rdi
+    call    putchar                         # Beep
+    movb    $1, no_tail_remove
+2:
+>>>>>>> Stashed changes
 
     # F) Update screen
     # Forall (snakeblock) DRAW_SNAKE_BLOCK
     # So: starting from the last block (queue head, oldest on screen),
     # roam the snakequeue and draw all blocks.
+
+    DRAW_BLANK_SCREEN
     movl    %r14d, %ebx
 3:
     leaq    snakequeue(, %ebx, 2), %rdx
@@ -465,7 +559,6 @@ proceed:
     jmp     loop
 
 do_gametick:
-    DRAW_BLANK_SCREEN
     DRAW_GAME_TICK
     movq    %r13, %rdi
     call    SDL_RenderPresent
