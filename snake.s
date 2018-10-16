@@ -6,8 +6,7 @@
     last_time: .long 0
     # Initialize direction with 0 (= right)
     direction: .byte 0
-    # Initialize no-tail-remove with 0 (remove tail normally)
-    no_tail_remove: .byte 0
+
 
 # Zero-initialized memory areas
 .bss
@@ -151,7 +150,7 @@
     jge     0f
     jmp     1f
 0:
-    movl    $0, %r14d                           # Start from beginning
+    movl    $0, r14d                            # Start from beginning
 1:
     movb    $0, block_occupied(%rax)            # Free the block for use
 .endm
@@ -182,7 +181,6 @@
     # Now we should have the number of free blocks in %rbx, and the
     # actual block numbers in apple_lottery_stack(0...%rbx-1).
 8:
-    xorq    %rax, %rax
     call    SDL_GetTicks
     movq    %rax, %rdx
     call    random
@@ -194,6 +192,7 @@
     xorq    %rcx, %rcx
     movw    apple_lottery_stack(, %rdx, 2), %cx
     movw    %cx, apple_block
+    movb    $1, block_occupied(%rcx)            # Reserve the block
 .endm
 
 
@@ -229,6 +228,62 @@
 
 
 .macro DRAW_APPLE block
+	# This macro draws one 24 x 24 pixel block of an apple using 4 8x8 blocks
+    # Decoding of coordinates:
+    # Keep subbing 26 from the block number until it's under 26
+    # Number of these substractions is y (unscaled)
+    # The remaining number is x (unscaled)
+    movw    \block, %ax
+    movl    $0, %r8d
+    1:
+    cmpw    $26, %ax
+    jl      2f                          # Jump forwards in macro
+    subw    $26, %ax
+    addl    $24, %r8d
+    jmp     1b                          # Jump backwards in macro
+    2:
+    # Scaling: xScaled = 24 + 24*x, yScaled = 24 + 24*y
+    movl    $24, %ecx
+    mull    %ecx
+    addw    $24, %ax					# x
+    addl    $24, %r8d					# y
+    movw    %ax, (%rsp)                	# put x on stack
+    movl    %r8d, 4(%rsp)              	# put y on stack
+
+    # top block
+    addw    $8, (%rsp)					# x
+    movq    %r13, %rdi                  # renderer
+    movl    $8, 8(%rsp)                	# w
+    movl    $8, 12(%rsp)               	# h
+    movq    %rsp, %rsi
+    call    SDL_RenderFillRect          # Fill the the block
+
+    # left block
+    subw    $8, (%rsp)					# restore x
+    addw    $8, 4(%rsp)					# y + 8
+    movq    %r13, %rdi                  # renderer
+    movl    $8, 8(%rsp)                	# w
+    movl    $8, 12(%rsp)               	# h
+    movq    %rsp, %rsi
+    call    SDL_RenderFillRect          # Fill the the block
+
+    # right block
+    addw    $16, (%rsp)					# x + 16
+    movq    %r13, %rdi                  # renderer
+    movl    $8, 8(%rsp)                	# w
+    movl    $8, 12(%rsp)               	# h
+    movq    %rsp, %rsi
+    call    SDL_RenderFillRect          # Fill the the block
+
+    # bottom block
+    subw    $8, (%rsp)					# x + 8
+    addw	$8, 4(%rsp)					# y + 16
+    movq    %r13, %rdi                  # renderer
+    movl    $8, 8(%rsp)                	# w
+    movl    $8, 12(%rsp)               	# h
+    movq    %rsp, %rsi
+    call    SDL_RenderFillRect          # Fill the the block
+
 .endm
 
 
@@ -236,97 +291,15 @@
     # Each game tick should:
     # A) check the direction,
     # B) detect possible crash,
-    # C) remove the tail if the snake didn’t eat in the last loop,
-    # D) set a new head for the snake (detect possible crash),
+    # C) set a new head for the snake,
+    # D) remove the tail if the snake didn’t eat in the last loop,
     # E) set a new apple and play a beep if it did eat now,
     # F) update the screen.
 
     leaq    snakequeue(, %r14d, 2), %rdx
-    movw    (%rdx), %bx                     # This is the current head
-    movb    direction, %al                  # Where are we going
+    movw    (%rdx), %ax                     # This is the current head
 
-    # A) Check direction
-    cmpb    $3, %al                         # Up
-    je      6f
-    cmpb    $2, %al                         # Down
-    je      7f
-    cmpb    $1, %al                         # Left
-    je      8f
-    cmpb    $0, %al                         # Right
-    je      9f
-    jmp     1f
 
-    # B) Labels 6-9: check if illegal direction for this head in %bx
-    # Forward to the_end if it is
-    # Otherwise calculate new position and let through
-6:
-    cmpw    $26, %bx                    # Top row, 0-25
-    jl      the_end
-    subw    $26, %bx
-    jmp     0f
-7:
-    cmpw    $337, %bx                   # Bottom row, 338-363
-    jg      the_end
-    addw    $26, %bx
-    jmp     0f
-8:
-    xorq    %rdx, %rdx
-    xorq    %rax, %rax
-    movq    %rbx, %rax
-    movq    $26, %rsi                   # Left column, multiples of 26
-    divq    %rsi
-    cmpq    $0, %rdx                    # Expect remainder to be 0
-    jne     the_end
-    subw    $1, %bx
-    jmp     0f
-9:
-    xorq    %rdx, %rdx
-    xorq    %rax, %rax
-    movq    %rbx, %rax
-    movq    $26, %rsi                   # Right column, multiples of 26
-    divq    %rsi                        # plus 25
-    cmpq    $25, %rdx                   # Expect remainder to be 25
-    jne     the_end
-    addw    $1, %bx
-    jmp     0f
-
-    # C) Remove tail if we didn't eat during the last tick
-    # If we did, just clear the no_tail_remove flag.
-0:
-    xorq    %rax, %rax
-    movb    no_tail_remove, %al
-    cmpb    $0, %al
-    je      1f
-    jmp     2f
-1:
-    # Didn't eat, remove tail
-    DEQUEUE
-    jmp     6f
-2:
-    # Did eat, clear the flag
-    movb    $0, no_tail_remove
-6:
-
-    # D) Check the new head and see if there was already a snake block
-    # Forward to the_end if there was
-    # Otherwise ENQUEUE and let through
-    xorq    %rax, %rax
-    movb    block_occupied(%rbx), %al
-    cmpb    $0, %al
-    jne     the_end
-    ENQUEUE %bx
-
-    # E) Check for apple under the new head
-    # Should there be one, dispatch a new one, play a beep, and raise
-    # the no_tail_remove flag for next tick
-    movw    apple_block, %cx                # Apple location
-    cmpw    %cx, %bx                        # Match with head
-    jne     7f
-    DISPATCH_APPLE
-    movq    $7, %rdi
-    call    putchar                         # Beep
-    movb    $1, no_tail_remove
-7:
 
     # F) Update screen
     # Forall (snakeblock) DRAW_SNAKE_BLOCK
@@ -336,7 +309,7 @@
 3:
     leaq    snakequeue(, %ebx, 2), %rdx
     movw    (%rdx), %cx
-    DRAW_SNAKE_BLOCK %cx
+    DRAW_SNAKE_BLOCK    %cx
     incl    %ebx
     cmpl    $364, %ebx
     jge     4f
@@ -347,10 +320,10 @@
     movl    $0, %ebx
     jmp     3b
 5:
-    # Finally, DRAW_APPLE
-    #xorq    %rcx, %rcx
-    #movw    apple_block, %cx
-    #DRAW_APPLE %cx
+    # DRAW_APPLE
+	xorq    %rcx, %rcx
+	movw    apple_block, %cx
+	DRAW_APPLE    %cx
 .endm
 
 
@@ -403,7 +376,6 @@ main:
     # Use stack to store the needed rectangle structures as x, y, w, h
     subq    $16, %rsp
 
-game_start:
     DRAW_BLANK_SCREEN
     INIT_SNAKE
     DISPATCH_APPLE
