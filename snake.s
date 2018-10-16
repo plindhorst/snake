@@ -1,7 +1,7 @@
 # Variables
 .data
     # Contains the block number for the current apple
-    apple_block: .value 0
+    apple_block: .short 0
     # Initialize last time with 0
     last_time: .long 0
     # Initialize direction with 0 (= right)
@@ -14,8 +14,15 @@
     # In addition to this, there are one block wide borders
     # So total area is 28 x 16 blocks = 672 x 384 px (scaled up x8)
     # A block needs 2 bytes of storage
-    # Maximum length of snake is the same as game area, queue needs +1:
-    snakequeue: .skip 730
+    # Maximum length of snake is the same as game area:
+    snakequeue: .skip 728
+
+    # An array to represent possible spaces for an apple
+    # 0 if free, 1 if not
+    # This is maintained in every tick
+    block_occupied: .skip 364
+    # A stack which is used for the apple lottery
+    apple_lottery_stack: .skip 728
 
 
 # Constants and program code
@@ -39,6 +46,10 @@
 
     # Starting position: third row, fourth column = 55
     start_position: .word 55
+
+    test_str: .asciz "%ld\n"
+
+
 
 
 .macro DRAW_BLANK_SCREEN
@@ -101,7 +112,6 @@
 
 .macro INIT_SNAKE
     # The snakequeue variable should contain block numbers.
-    # Starting position: third row, third column, three-block snake
     # The queue head is in r14, tail in r15
     movl    $0, %r14d
     movl    $0, %r15d
@@ -127,10 +137,14 @@
 0:
     movl    $0, %r15d                           # Start from beginning
 1:
+    movw    \block, %ax
+    movb    $1, block_occupied(%rax)            # Reserve the block
 .endm
 
 
 .macro DEQUEUE
+    leaq    snakequeue(, %r14d, 2), %rdx
+    movw    (%rdx), %ax
     incl    %r14d                               # Update head
     cmpl    $364, %r14d                         # Check for overflow
     jge     0f
@@ -138,6 +152,47 @@
 0:
     movl    $0, r14d                            # Start from beginning
 1:
+    movb    $0, block_occupied(%rax)            # Free the block for use
+.endm
+
+
+.macro DISPATCH_APPLE
+    # Set the apple_block to be some free block on the game area
+    # Here we need some randomness
+
+    # Check how many blocks are free and which ones they are
+    xorq    %rcx, %rcx
+    xorq    %rax, %rax
+    xorq    %rbx, %rbx
+6:
+    cmpq    $363, %rcx
+    jg      8f
+    movb    block_occupied(%rcx), %al
+    test    %al, %al
+    jz      7f
+    incq    %rcx
+    jmp     6b
+7:
+    movw    %cx, apple_lottery_stack(, %rbx, 2)
+    incq    %rbx
+    incq    %rcx
+    jmp     6b
+
+    # Now we should have the number of free blocks in %rbx, and the
+    # actual block numbers in apple_lottery_stack(0...%rbx-1).
+8:
+    call    SDL_GetTicks
+    movq    %rax, %rdx
+    call    random
+    addq    %rdx, %rax
+    # A random value is in %rax now
+    xorq    %rdx, %rdx
+    divq    %rbx
+    # A random value between 0...%rbx-1 should be in %rdx now
+    xorq    %rcx, %rcx
+    movw    apple_lottery_stack(, %rdx, 2), %cx
+    movw    %cx, apple_block
+    movb    $1, block_occupied(%rcx)            # Reserve the block
 .endm
 
 
@@ -172,27 +227,21 @@
 .endm
 
 
-.macro DISPATCH_APPLE
-    # Set the apple_block to be some free block on the game area
-    # Here we need some randomness
-    call    clock_gettime
-    movq    %r9, %rax
-    xor     %rdx, %rdx
-    movq    $10, %rcx
-    divq    %rcx
-    # A random number 0 <= r <= 9 is in rdx now
+.macro DRAW_APPLE block
 .endm
-
 
 
 .macro DRAW_GAME_TICK
     # Each game tick should:
-    # A) search the keycode table for arrow keys,
+    # A) check the direction,
     # B) detect possible crash,
     # C) set a new head for the snake,
     # D) remove the tail if the snake didn’t eat in the last loop,
-    # E) set a new apple and play a beep if it did,
+    # E) set a new apple and play a beep if it did eat now,
     # F) update the screen.
+
+    leaq    snakequeue(, %r14d, 2), %rdx
+    movw    (%rdx), %ax                     # This is the current head
 
 
 
@@ -271,14 +320,11 @@ main:
 
     DRAW_BLANK_SCREEN
     INIT_SNAKE
-    #DISPATCH_APPLE
+    DISPATCH_APPLE
+    DRAW_GAME_TICK
+    movq    %r13, %rdi
+    call    SDL_RenderPresent
 
-
-
-
-
-
-    #DRAW_GAME_TICK
 
 loop:
     # Main game loop runs fast to detect keycodes
@@ -298,7 +344,7 @@ loop:
 
     # Use rbx to store gametick flag
 gametick:
-    movb    $1, %bl
+    movl    $1, %ebx
     movl    %eax, last_time                 # Update last time
     jmp     eventcheck
 
@@ -333,16 +379,16 @@ eventcheck:
 
     # Update direction vector
 right_pressed:
-    movl    $0, direction
+    movb    $0, direction
     jmp     proceed
 left_pressed:
-    movl    $1, direction
+    movb    $1, direction
     jmp     proceed
 down_pressed:
-    movl    $2, direction
+    movb    $2, direction
     jmp     proceed
 up_pressed:
-    movl    $3, direction
+    movb    $3, direction
     jmp     proceed
 
 
