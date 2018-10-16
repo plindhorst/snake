@@ -245,13 +245,13 @@
     # Scaling: xScaled = 24 + 24*x, yScaled = 24 + 24*y
     movl    $24, %ecx
     mull    %ecx
-    addw    $24, %ax					# x
-    addl    $24, %r8d					# y
+    addw    $24, %ax                    # x
+    addl    $24, %r8d                   # y
     movw    %ax, (%rsp)                	# put x on stack
     movl    %r8d, 4(%rsp)              	# put y on stack
 
     # top block
-    addw    $8, (%rsp)					# x
+    addw    $8, (%rsp)                  # x
     movq    %r13, %rdi                  # renderer
     movl    $8, 8(%rsp)                	# w
     movl    $8, 12(%rsp)               	# h
@@ -259,8 +259,8 @@
     call    SDL_RenderFillRect          # Fill the the block
 
     # left block
-    subw    $8, (%rsp)					# restore x
-    addw    $8, 4(%rsp)					# y + 8
+    subw    $8, (%rsp)                  # restore x
+    addw    $8, 4(%rsp)                 # y + 8
     movq    %r13, %rdi                  # renderer
     movl    $8, 8(%rsp)                	# w
     movl    $8, 12(%rsp)               	# h
@@ -268,7 +268,7 @@
     call    SDL_RenderFillRect          # Fill the the block
 
     # right block
-    addw    $16, (%rsp)					# x + 16
+    addw    $16, (%rsp)                 # x + 16
     movq    %r13, %rdi                  # renderer
     movl    $8, 8(%rsp)                	# w
     movl    $8, 12(%rsp)               	# h
@@ -276,8 +276,8 @@
     call    SDL_RenderFillRect          # Fill the the block
 
     # bottom block
-    subw    $8, (%rsp)					# x + 8
-    addw	$8, 4(%rsp)					# y + 16
+    subw    $8, (%rsp)                  # x + 8
+    addw	$8, 4(%rsp)                 # y + 16
     movq    %r13, %rdi                  # renderer
     movl    $8, 8(%rsp)                	# w
     movl    $8, 12(%rsp)               	# h
@@ -342,6 +342,10 @@ main:
     # Init basepointer
     pushq   %rbp
     movq    %rsp, %rbp
+
+    # get command line args : put difficulty into r15
+    # corresponds to second arg: argv[1]
+    movq   8(%rsi), %r15
 
     # SDL_INIT_EVERYTHING = 0x7231
     movl	$0x7231, %edi
