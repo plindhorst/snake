@@ -6,10 +6,12 @@
     last_time: .long 0
     # Initialize direction with 0 (= right)
     direction: .byte 0
+    # Initialize last known direction to avoid 180-degree turns
+    last_direction: .byte 0
     # Initialize no-tail-remove with 0 (remove tail normally)
     no_tail_remove: .byte 0
     # Difficulty level
-    difficulty: .quad 9
+    difficulty: .quad 4
 
 # Zero-initialized memory areas
 .bss
@@ -116,8 +118,8 @@
 .macro INIT_SNAKE
     # The snakequeue variable should contain block numbers.
     # The queue head is in r14, tail in r15
-    movl    $0, %r14d
-    movl    $0, %r15d
+    movq    $0, %r14
+    movq    $0, %r15
 
     movw    start_position, %cx
     subw    $2, %cx
@@ -299,11 +301,20 @@
 
     movl    %r15d, %eax
     decl    %eax
+    cmpl    $0, %eax            # In case of wrap, go back to end
+    jl      1f
+0:
     leaq    snakequeue(, %eax, 2), %rdx
     movw    (%rdx), %bx                     # This is the current head
     movb    direction, %al                  # Where are we going
+    jmp     2f
+1:
+    movl    $363, %eax
+    jmp     0b
+2:
 
-    # A) Check direction
+    # A) Check direction and save it for later use
+    movb    %al, last_direction
     cmpb    $3, %al                         # Up
     je      6f
     cmpb    $2, %al                         # Down
@@ -402,16 +413,18 @@
     cmpl    $364, %ebx
     jge     4f
     cmpl    %r15d, %ebx
-    jge     5f
+    je      5f
     jmp     3b
 4:
     movl    $0, %ebx
+    cmpl    %r15d, %ebx
+    je      5f
     jmp     3b
 5:
     # DRAW_APPLE
-	xorq    %rcx, %rcx
-	movw    apple_block, %cx
-	DRAW_APPLE    %cx
+    xorq    %rcx, %rcx
+    movw    apple_block, %cx
+    DRAW_APPLE    %cx
 
     # Refresh the screen
     movq    %r13, %rdi
@@ -486,6 +499,15 @@ no_args:
     DRAW_GAME_TICK
 
 
+
+
+
+
+
+
+
+
+
 loop:
     # Main game loop runs fast to detect keycodes
     # Each game loop should update the pressed keys and
@@ -545,26 +567,28 @@ eventcheck:
     jmp     proceed
 
     # Update direction vector if it isn't a 180 degree turn
+    # *** TODO *** If user first presses something else, then a 180 turn
+    # goes through => game over
 right_pressed:
-    movb    direction, %al
+    movb    last_direction, %al
     cmpb    $1, %al
     je      proceed
     movb    $0, direction
     jmp     proceed
 left_pressed:
-    movb    direction, %al
+    movb    last_direction, %al
     cmpb    $0, %al
     je      proceed
     movb    $1, direction
     jmp     proceed
 down_pressed:
-    movb    direction, %al
+    movb    last_direction, %al
     cmpb    $3, %al
     je      proceed
     movb    $2, direction
     jmp     proceed
 up_pressed:
-    movb    direction, %al
+    movb    last_direction, %al
     cmpb    $2, %al
     je      proceed
     movb    $3, direction
