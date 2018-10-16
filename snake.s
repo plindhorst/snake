@@ -6,7 +6,10 @@
     last_time: .long 0
     # Initialize direction with 0 (= right)
     direction: .byte 0
-
+    # Initialize no-tail-remove with 0 (remove tail normally)
+    no_tail_remove: .byte 0
+    # Difficulty level
+    difficulty: .quad 9
 
 # Zero-initialized memory areas
 .bss
@@ -14,8 +17,8 @@
     # In addition to this, there are one block wide borders
     # So total area is 28 x 16 blocks = 672 x 384 px (scaled up x8)
     # A block needs 2 bytes of storage
-    # Maximum length of snake is the same as game area:
-    snakequeue: .skip 728
+    # Maximum length of snake is the same as game area, plus 1 word for queue:
+    snakequeue: .skip 730
 
     # An array to represent possible spaces for an apple
     # 0 if free, 1 if not
@@ -150,7 +153,7 @@
     jge     0f
     jmp     1f
 0:
-    movl    $0, r14d                            # Start from beginning
+    movl    $0, %r14d                           # Start from beginning
 1:
     movb    $0, block_occupied(%rax)            # Free the block for use
 .endm
@@ -192,7 +195,6 @@
     xorq    %rcx, %rcx
     movw    apple_lottery_stack(, %rdx, 2), %cx
     movw    %cx, apple_block
-    movb    $1, block_occupied(%rcx)            # Reserve the block
 .endm
 
 
@@ -283,7 +285,6 @@
     movl    $8, 12(%rsp)               	# h
     movq    %rsp, %rsi
     call    SDL_RenderFillRect          # Fill the the block
-
 .endm
 
 
@@ -296,12 +297,6 @@
     # E) set a new apple and play a beep if it did eat now,
     # F) update the screen.
 
-<<<<<<< Updated upstream
-    leaq    snakequeue(, %r14d, 2), %rdx
-    movw    (%rdx), %ax                     # This is the current head
-
-
-=======
     movl    %r15d, %eax
     decl    %eax
     leaq    snakequeue(, %eax, 2), %rdx
@@ -391,7 +386,6 @@
     call    putchar                         # Beep
     movb    $1, no_tail_remove
 2:
->>>>>>> Stashed changes
 
     # F) Update screen
     # Forall (snakeblock) DRAW_SNAKE_BLOCK
@@ -418,6 +412,10 @@
 	xorq    %rcx, %rcx
 	movw    apple_block, %cx
 	DRAW_APPLE    %cx
+
+    # Refresh the screen
+    movq    %r13, %rdi
+    call    SDL_RenderPresent
 .endm
 
 
@@ -437,14 +435,23 @@ main:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # get command line args : put difficulty into r15
+    # get command line args : set difficulty
     # corresponds to second arg: argv[1]
-    movq   8(%rsi), %r15
+    movq    8(%rsi), %rax
+    cmpq    $0, %rax
+    jle     no_args
+    cmpq    $9, %rax
+    jg      no_args
+    movq    %rax, difficulty
 
+no_args:
     # SDL_INIT_EVERYTHING = 0x7231
     movl	$0x7231, %edi
     # Init SDL
     call	SDL_Init
+
+    movq    $7, %rdi
+    call    putchar                         # Beep
 
     # Create window
     # Parameters go to rdi, rsi, rdx, rcx, r8 and r9;
@@ -474,12 +481,9 @@ main:
     # Use stack to store the needed rectangle structures as x, y, w, h
     subq    $16, %rsp
 
-    DRAW_BLANK_SCREEN
     INIT_SNAKE
     DISPATCH_APPLE
     DRAW_GAME_TICK
-    movq    %r13, %rdi
-    call    SDL_RenderPresent
 
 
 loop:
@@ -488,12 +492,19 @@ loop:
     # every #n time call the actual game tick macro
     # (#n depends on difficulty level)
 
+    # Get difficulty
+    movq    difficulty, %rcx
+    movq    $1000, %rax
+    xorq    %rdx, %rdx
+    divq    %rcx
+    movq    %rax, %rbx
+
     # Get time
     movq    $0, %rdi
     call    SDL_GetTicks
     # Compare to last time
     movl    %eax, %ecx
-    subl    $1000, %ecx
+    subl    %ebx, %ecx
     cmpl    last_time, %ecx
     jge     gametick
     jmp     no_gametick
@@ -533,17 +544,29 @@ eventcheck:
     je      the_end
     jmp     proceed
 
-    # Update direction vector
+    # Update direction vector if it isn't a 180 degree turn
 right_pressed:
+    movb    direction, %al
+    cmpb    $1, %al
+    je      proceed
     movb    $0, direction
     jmp     proceed
 left_pressed:
+    movb    direction, %al
+    cmpb    $0, %al
+    je      proceed
     movb    $1, direction
     jmp     proceed
 down_pressed:
+    movb    direction, %al
+    cmpb    $3, %al
+    je      proceed
     movb    $2, direction
     jmp     proceed
 up_pressed:
+    movb    direction, %al
+    cmpb    $2, %al
+    je      proceed
     movb    $3, direction
     jmp     proceed
 
@@ -560,8 +583,6 @@ proceed:
 
 do_gametick:
     DRAW_GAME_TICK
-    movq    %r13, %rdi
-    call    SDL_RenderPresent
     jmp     loop
 
 
