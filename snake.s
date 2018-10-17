@@ -12,6 +12,8 @@
     no_tail_remove: .byte 0
     # Difficulty level
     difficulty: .quad 4
+    # Score
+    score: .quad 4
 
 # Zero-initialized memory areas
 .bss
@@ -32,6 +34,7 @@
 
 # Constants and program code
 .text
+    printstr:       .asciz "Score is: %ld\n"
     # Window
     window_title: .asciz "Snake"            # window title
     .equ window_height, 384                 # window height is 384
@@ -395,6 +398,7 @@
     DISPATCH_APPLE
     movq    $7, %rdi
     call    putchar                         # Beep
+    addq    $1, score
     movb    $1, no_tail_remove
 2:
 
@@ -466,6 +470,8 @@ no_args:
     movq    $7, %rdi
     call    putchar                         # Beep
 
+    # Init Score
+    movq    $0, score
     # Create window
     # Parameters go to rdi, rsi, rdx, rcx, r8 and r9;
     # SDL_CreateWindow wants window title, x, y, width, height and flags
@@ -619,6 +625,10 @@ the_end:
     call    SDL_DestroyWindow
     # Shut down SDL
     call    SDL_Quit
+    movq    score, %rsi             # 2nd arg for printf
+    movq    $printstr, %rdi         # first arg for printf
+    movq    $0, %rax                # again no vectors
+    call    printf                  # print
     # Exit code 0
     movq    $0, %rdi
     call    exit
