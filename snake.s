@@ -1,4 +1,4 @@
-# Variables
+scorestr# Variables
 .data
     # Contains the block number for the current apple
     apple_block: .short 0
@@ -11,9 +11,9 @@
     # Initialize no-tail-remove with 0 (remove tail normally)
     no_tail_remove: .byte 0
     # Difficulty level
-    difficulty: .quad 4
-    # Score
-    score: .quad 4
+    difficulty: .quad 5
+    # Current score
+    score: .quad 0
 
 # Zero-initialized memory areas
 .bss
@@ -23,18 +23,21 @@
     # A block needs 2 bytes of storage
     # Maximum length of snake is the same as game area, plus 1 word for queue:
     snakequeue: .skip 730
-
     # An array to represent possible spaces for an apple
     # 0 if free, 1 if not
     # This is maintained in every tick
     block_occupied: .skip 364
     # A stack which is used for the apple lottery
     apple_lottery_stack: .skip 728
+    # Hiscore table, a quad for each of 3 scores (max points 3249, but
+    # simpler to use quads for now)
+    hiscores: .skip 24
 
 
 # Constants and program code
 .text
-    printstr:       .asciz "Score is: %ld\n"
+    scorestr:       .asciz "Score is: %ld\n"
+    diffstr:       .asciz "Difficulty is: %ld\n"
     # Window
     window_title: .asciz "Snake"            # window title
     .equ window_height, 384                 # window height is 384
@@ -55,7 +58,7 @@
     # Starting position: third row, fourth column = 55
     start_position: .word 55
 
-    test_str: .asciz "%ld\n"
+
 
 
 
@@ -394,11 +397,10 @@
     movw    apple_block, %cx                # Apple location
     cmpw    %cx, %bx                        # Match with head
     jne     2f
-    movq    $1, %rax
     DISPATCH_APPLE
-    movq    $7, %rdi
-    call    putchar                         # Beep
-    addq    $1, score
+    # *** TODO *** Beep
+    movw    difficulty, %cx
+    addw    %cx, score
     movb    $1, no_tail_remove
 2:
 
@@ -452,14 +454,24 @@ main:
     pushq   %rbp
     movq    %rsp, %rbp
 
-    # get command line args : set difficulty
+    # get command line args : set difficulty if between 1-9
     # corresponds to second arg: argv[1]
-    movq    8(%rsi), %rax
-    cmpq    $0, %rax
-    jle     no_args
-    cmpq    $9, %rax
+    xorq    %rbx, %rbx
+    movq    8(%rsi), %rcx           # argv is in %rcx now
+    movb    (%rcx), %bl             # The first char of arguments
+    subq    $0x30, %rbx             # Convert to decimal
+
+    movq    %rbx, %rsi              # Display difficulty in terminal
+    movq    $diffstr, %rdi         # first arg for printf
+    movq    $0, %rax                # no vectors
+    call    printf                  # print
+
+    cmpq    $1, %rbx
+    jl      no_args
+    cmpq    $9, %rbx
     jg      no_args
-    movq    %rax, difficulty
+    movq    %rbx, difficulty
+
 
 no_args:
     # SDL_INIT_EVERYTHING = 0x7231
@@ -467,8 +479,6 @@ no_args:
     # Init SDL
     call	SDL_Init
 
-    movq    $7, %rdi
-    call    putchar                         # Beep
 
     # Init Score
     movq    $0, score
@@ -500,19 +510,10 @@ no_args:
     # Use stack to store the needed rectangle structures as x, y, w, h
     subq    $16, %rsp
 
+game_start:
     INIT_SNAKE
     DISPATCH_APPLE
     DRAW_GAME_TICK
-
-
-
-
-
-
-
-
-
-
 
 loop:
     # Main game loop runs fast to detect keycodes
@@ -617,6 +618,14 @@ do_gametick:
 
 
 the_end:
+    # Call game_over with this score and the hiscore table to display hiscores
+    # It should return a selection in %rax
+    # 0 for exit, 1 for retry
+    #movq    score, %rsi
+    #movq    hiscores, %rdi
+    #call    game_over
+    #jnz     %rax, game_start
+
     # Destroy renderer
     movq    %r13, %rdi
     call    SDL_DestroyRenderer
@@ -625,10 +634,18 @@ the_end:
     call    SDL_DestroyWindow
     # Shut down SDL
     call    SDL_Quit
-    movq    score, %rsi             # 2nd arg for printf
-    movq    $printstr, %rdi         # first arg for printf
+    movq    score, %rsi             # Display score in terminal
+    movq    $scorestr, %rdi         # first arg for printf
     movq    $0, %rax                # again no vectors
     call    printf                  # print
     # Exit code 0
     movq    $0, %rdi
     call    exit
+
+
+
+
+#
+# A subroutine to display hiscores and play again/exit
+#
+game_over:
