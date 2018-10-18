@@ -1,4 +1,4 @@
-scorestr# Variables
+#scorestr# Variables
 .data
     # Contains the block number for the current apple
     apple_block: .short 0
@@ -57,6 +57,18 @@ scorestr# Variables
 
     # Starting position: third row, fourth column = 55
     start_position: .word 55
+
+    # game over display
+    font:	.asciz	"files/arial.ttf"
+	.equ font_size, 25
+	.equ font_color, 1536640
+
+    gameover_text:	.asciz	"Game Over!"
+    .equ gameover_x, 270             
+    .equ gameover_y, 30  
+            
+
+	
 
 
 
@@ -332,16 +344,16 @@ scorestr# Variables
     jmp     1f
 
     # B) Labels 6-9: check if illegal direction for this head in %bx
-    # Forward to the_end if it is
+    # Forward to game_over if it is
     # Otherwise calculate new position and let through
 6:
     cmpw    $26, %bx                    # Top row, 0-25
-    jl      the_end
+    jl      game_over
     subw    $26, %bx
     jmp     0f
 7:
     cmpw    $337, %bx                   # Bottom row, 338-363
-    jg      the_end
+    jg      game_over
     addw    $26, %bx
     jmp     0f
 8:
@@ -351,7 +363,7 @@ scorestr# Variables
     movq    $26, %rsi                   # Left column, multiples of 26
     divq    %rsi
     cmpq    $0, %rdx                    # Expect remainder to not be 0
-    je      the_end
+    je      game_over
     subw    $1, %bx
     jmp     0f
 9:
@@ -361,7 +373,7 @@ scorestr# Variables
     movq    $26, %rsi                   # Right column, multiples of 26
     divq    %rsi                        # plus 25
     cmpq    $25, %rdx                   # Expect remainder to not be 25
-    je      the_end
+    je      game_over
     addw    $1, %bx
     jmp     0f
 
@@ -383,12 +395,12 @@ scorestr# Variables
 6:
 
     # D) Check the new head and see if there was already a snake block
-    # Forward to the_end if there was
+    # Forward to game_over if there was
     # Otherwise ENQUEUE and let through
     xorq    %rax, %rax
     movb    block_occupied(%rbx), %al
     cmpb    $0, %al
-    jne     the_end
+    jne     game_over
     ENQUEUE %bx
 
     # E) Check for apple under the new head
@@ -462,11 +474,11 @@ main:
     subq    $0x30, %rbx             # Convert to decimal
 
     movq    %rbx, %rsi              # Display difficulty in terminal
-    movq    $diffstr, %rdi         # first arg for printf
+    movq    $diffstr, %rdi         	# first arg for printf
     movq    $0, %rax                # no vectors
     call    printf                  # print
 
-    cmpq    $1, %rbx
+    cmpq    $5, %rbx
     jl      no_args
     cmpq    $9, %rbx
     jg      no_args
@@ -570,7 +582,7 @@ eventcheck:
     cmpb    $1, 82(%rax)
     je      up_pressed
     cmpb    $1, 41(%rax)
-    je      the_end
+    je      end_destroy
     jmp     proceed
 
     # Update direction vector if it isn't a 180 degree turn
@@ -617,7 +629,7 @@ do_gametick:
     jmp     loop
 
 
-the_end:
+end_destroy:
     # Call game_over with this score and the hiscore table to display hiscores
     # It should return a selection in %rax
     # 0 for exit, 1 for retry
@@ -644,8 +656,110 @@ the_end:
 
 
 
-
 #
 # A subroutine to display hiscores and play again/exit
 #
 game_over:
+
+	# destroy old render
+	movq    %r13, %rdi
+    call    SDL_DestroyRenderer
+
+    # init ttf
+	call	TTF_Init
+
+	movq    %r12, %rdi 				# window pointer arg
+    movl    $-1, %esi				# First suitable rendering driver = -1
+    movl    $0x2, %edx				# SDL_RENDER_ACCELERATED = 0x2
+    call    SDL_CreateRenderer
+	movq	%rax, %rbx 				# returns a pointer to a renderer. Save it in rbx
+	
+	# background color
+	movq    %rbx, %rdi
+    movl    $bg_r, %esi
+    movl    $bg_g, %edx
+    movl    $bg_b, %ecx
+    movl    $bg_a, %r8d
+    call    SDL_SetRenderDrawColor
+
+    # Draw background
+    movq    %rbx, %rdi
+    call    SDL_RenderClear
+
+    # create font
+	movl	$font_size, %esi	
+	movq	$font, %rdi
+	call	TTF_OpenFont
+	movq	%rax, %r13 				# returns a pointer to a font. Save it in r13
+
+	# prepare texture
+	movl	$font_color, %edx
+	movq	$gameover_text, %rsi
+	movq	%r13, %rdi
+	call	TTF_RenderText_Solid
+	movq	%rax, %r14				# returns a pointer to a font. Save it in r14
+
+	# create texture
+	movq	%r14, %rsi
+	movq	%rbx, %rdi
+	call	SDL_CreateTextureFromSurface
+	movq	%rax, %rbp 				# returns a pointer to a texture. Save it in rbp
+
+	movl	$0, 28(%rsp)
+	movl	$0, 24(%rsp)
+
+
+	leaq	28(%rsp), %rcx
+	leaq	24(%rsp), %r8
+
+	movl	$0, %edx				# pointer height 0
+	movl	$0, %esi				# pointer width 0
+	movq	%rbp, %rdi 				# texture
+	call	SDL_QueryTexture 		# query the attributes of the texture
+
+	movl	$gameover_x, (%rsp)
+	movl	$gameover_y, 4(%rsp)
+
+	# get the dimensions of the texture
+	movl	28(%rsp), %eax
+	movl	%eax, 8(%rsp)
+	movl	24(%rsp), %eax
+	movl	%eax, 12(%rsp)
+
+	# copy a portion of the texture to the current rendering target
+	movq	%rsp, %rcx 				# constant dstrect
+	movl	$0, %edx				# constant srcrect
+	movq	%rbx, %rdi 				# renderer
+	movq	%rbp, %rsi 				# texture
+	call	SDL_RenderCopy
+
+	# update the screen with any rendering performed
+	movq	%rbx, %rdi 				# renderer
+	call	SDL_RenderPresent
+
+	# check if user wants to exit
+loop_gameover:
+	movq    $0, %rdi
+    call    SDL_PumpEvents
+    # Check keycode table
+    movq    $0, %rdi
+    call    SDL_GetKeyboardState
+
+    cmpb    $1, 41(%rax)
+    je      end_gameover
+    jmp 	loop_gameover
+
+
+    # destroy everything
+end_gameover:
+	movq	%rbp, %rdi
+	call	SDL_DestroyTexture
+
+	movq	%r14, %rdi
+	call	SDL_FreeSurface
+
+	movq	%r13, %rdi
+	call	TTF_CloseFont
+
+	call	TTF_Quit
+	jmp 	end_destroy
