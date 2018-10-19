@@ -14,6 +14,8 @@
     difficulty: .quad 5
     # Current score
     score: .quad 0
+    # Mix_Chunk pointer
+    wave_chunk: .quad 0
 
 # Zero-initialized memory areas
 .bss
@@ -43,7 +45,7 @@
     .equ window_height, 384                 # window height is 384
     .equ window_width, 672                  # window width is 672
     .equ window_x, 536805376                # undefined
-    .equ window_y, 536805376                # undefined
+    .equ window_y, 536805376                # undefined     
 
     .equ bg_r, 190                          # background red
     .equ bg_g, 195                          # background green
@@ -67,7 +69,10 @@
     .equ gameover_x, 270             
     .equ gameover_y, 30  
             
-
+    # Sound
+    mode: .string   "rb"
+    soundfile: .string  "files/beep.wav"
+    .equ frequency, 22050                   # frequency
 	
 
 
@@ -410,7 +415,27 @@
     cmpw    %cx, %bx                        # Match with head
     jne     2f
     DISPATCH_APPLE
-    # *** TODO *** Beep
+    
+    # Beep
+    movq    wave_chunk, %rdi                # Mix_Chunk pointer
+    call    Mix_FreeChunk                   # Free the memory used in chunk, and free chunk as well
+
+    movq    $soundfile, %rdi                # File
+    movq    $mode, %rsi                     # Mode (rb: read as binary)
+    call    SDL_RWFromFile                  # Returns a pointer to the SDL_RWops structure
+
+    movq    %rax, %rdi                      # Source
+    movl    $1, %esi                        # A non-zero value : automatically close/open the src
+    call    Mix_LoadWAV_RW                  # Returns pointer to the sample as Mix_Chunk
+    movq    %rax, wave_chunk                # Put this pointer in variable for later use 
+
+    movl    $-1, %ecx                       # Channel -1: pick the first free unreserved channel
+    movq    wave_chunk, %rsi                # Mix_Chunk pointer
+    movl    $0, %edx                        # 0 loops: play loop+1 times
+    movl    $-1, %edi                       # Ticks set to -1: play forever
+    call    Mix_PlayChannelTimed            # Returns he channel the sample is played on. Returns -1 in case of errors
+
+    # Increment score
     movw    difficulty, %cx
     addw    %cx, score
     movb    $1, no_tail_remove
@@ -491,6 +516,12 @@ no_args:
     # Init SDL
     call	SDL_Init
 
+    # Init sound
+    movl    $frequency, %edi        # Frequency in Hz
+    movl    $32784, %esi            # Format (MIX_DEFAULT_FORMAT)
+    movl    $2, %edx                # Channels 2 for stereo
+    movl    $4096, %ecx             # Chunksize: bytes used for output sample
+    call    Mix_OpenAudio           # Returns 0 on success, -1 on errors
 
     # Init Score
     movq    $0, score
@@ -644,6 +675,9 @@ end_destroy:
     # Destroy window
     movq    %r12, %rdi
     call    SDL_DestroyWindow
+
+    call Mix_CloseAudio             # Shutdown and close the mixer API
+
     # Shut down SDL
     call    SDL_Quit
     movq    score, %rsi             # Display score in terminal
