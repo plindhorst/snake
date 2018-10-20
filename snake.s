@@ -21,7 +21,7 @@
     second_score:           .quad 0
     third_score:            .quad 0
 
-    # Beep pointer for sound
+    # Mix_Chunk pointer for sound
     beep_pointer:             .quad 0
 
     # Gameover screen strings
@@ -107,8 +107,7 @@
     .equ newgame_y,         290
 
     # Sound
-    mode:                   .string "rb"        # Mode rb = read as binary
-    soundfile:              .string "files/beep.wav"
+    soundfile:              .string "files/beep.ogg"
     .equ frequency,         22050
 
 
