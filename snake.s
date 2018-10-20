@@ -22,7 +22,7 @@
     third_score:            .quad 0
 
     # Mix_Chunk pointer for sound
-    wave_chunk:             .quad 0
+    beep_pointer:             .quad 0
 
     # Gameover screen strings
     # Score = "Score: " + 4-digit decimal + "\0" - 12 bytes
@@ -605,32 +605,9 @@
     DISPATCH_APPLE
 
     # Beep
-    movq    wave_chunk, %rdi                # Mix_Chunk pointer
-    call    Mix_FreeChunk                   # Free the memory used in chunk,
-                                            # and free chunk as well
-
-    movq    $soundfile, %rdi                # File
-    movq    $mode, %rsi                     # Mode (rb: read as binary)
-    call    SDL_RWFromFile                  # Returns a pointer to the
-                                            # SDL_RWops structure
-
-    movq    %rax, %rdi                      # Source
-    movl    $1, %esi                        # A non-zero value : automatically
-                                            # close/open the src
-
-    call    Mix_LoadWAV_RW                  # Returns pointer to the sample as
-                                            # Mix_Chunk
-    movq    %rax, wave_chunk                # Put this pointer in variable for
-                                            # later use
-
-    movl    $-1, %ecx                       # Channel -1: pick the first free
-                                            # unreserved channel
-    movq    wave_chunk, %rsi                # Mix_Chunk pointer
-    movl    $0, %edx                        # 0 loops: play loop+1 times
-    movl    $-1, %edi                       # Ticks set to -1: play forever
-    call    Mix_PlayChannelTimed            # Returns he channel the sample
-                                            # is played on. Returns -1 in case
-                                            # of errors
+    movq	beep_pointer, %rdi 				# Pointer to the Mix_music
+    movl	$1, %esi 						# Number of times to play the music
+	call	Mix_PlayMusic
 
     # Increment score
     movw    difficulty, %cx
@@ -691,15 +668,15 @@ main:
 
     # get command line args : set difficulty if between 1-9
     # corresponds to second arg: argv[1]
-    cmpq    $2, %rdi                        # argc below 2 = no args
+    cmpq    $2, %rdi			# argc below 2 = no args
     jl      no_args
     xorq    %rbx, %rbx
-    movq    8(%rsi), %rcx                   # argv is in %rcx now
-    movb    (%rcx), %bl                     # The first char of arguments
-    subq    $0x30, %rbx                     # Convert to decimal
+    movq    8(%rsi), %rcx		# argv is in %rcx now
+    movb    (%rcx), %bl			# The first char of arguments
+    subq    $0x30, %rbx			# Convert to decimal
 
 
-    cmpq    $1, %rbx                        # Check if in range
+    cmpq    $1, %rbx 			# Check if in range
     jl      no_args
     cmpq    $9, %rbx
     jg      no_args
@@ -707,21 +684,27 @@ main:
 
 
 no_args:
-    movq    $diffstr, %rdi      # first arg for printf
-    movq    difficulty, %rsi    # Display difficulty in terminal
-    movq    $0, %rax            # no vectors
-    call    printf              # print
+    movq    $diffstr, %rdi		# first arg for printf
+    movq    difficulty, %rsi	# Display difficulty in terminal
+    movq    $0, %rax			# no vectors
+    call    printf				# print
 
-    movl    $0x7231, %edi       # Magic number: SDL_INIT_EVERYTHING = 0x7231
+    movl    $0x7231, %edi		# Magic number: SDL_INIT_EVERYTHING = 0x7231
     # Init SDL
     call    SDL_Init
 
     # Init sound
-    movl    $frequency, %edi    # Frequency in Hz
+    movl    $frequency, %edi	# Frequency in Hz
     movl    $0x8010, %esi       # Magic number: MIX_DEFAULT_FORMAT = 0x8010
     movl    $2, %edx            # Channels, 2 for stereo
     movl    $4096, %ecx         # Chunksize: bytes used for output sample
     call    Mix_OpenAudio       # Returns 0 on success, -1 on errors
+
+	
+
+    movq	$soundfile, %rdi 	# Sound file
+	call	Mix_LoadMUS 		# Returns a pointer to a Mix_Music
+	movq	%rax, beep_pointer	# Save pointer in variable
 
     # Create window
     # Parameters go to rdi, rsi, rdx, rcx, r8 and r9;
@@ -881,7 +864,6 @@ quit:
     movq    %r12, %rdi
     call    SDL_DestroyWindow
 
-    movq    $0, %rdi
     call    Mix_CloseAudio          # Shutdown and close the mixer API
 
     # Shut down SDL
