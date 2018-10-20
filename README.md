@@ -14,13 +14,10 @@ Controls:
 Highscores are not saved to disk so they will be zeroed every time the game is launched.
 
 Dependencies:
-libsdl2-dev
-libsdl2-ttf-dev
-libsdl2-mixer-dev
+libsdl2-dev, libsdl2-ttf-dev, libsdl2-mixer-dev
 
 Compile with:
-"gcc -g -o snake -lSDL2 -lSDL2_ttf -lSDL2_mixer -no-pie snake.s"
+"gcc -o snake -lSDL2 -lSDL2_ttf -lSDL2_mixer -no-pie snake.s"
 
 Launch with:
-"./snake <difficulty>"
-where <difficulty> is a number between 1-9 (optional, defaults to 5).
+"./snake *difficulty*" where *difficulty* is a number between 1-9 (optional, defaults to 5).
