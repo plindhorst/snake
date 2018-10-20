@@ -1,21 +1,37 @@
-#scorestr# Variables
+# Variables
 .data
     # Contains the block number for the current apple
-    apple_block: .short 0
+    apple_block:            .short 0
     # Initialize last time with 0
-    last_time: .long 0
+    last_time:              .long 0
     # Initialize direction with 0 (= right)
-    direction: .byte 0
+    direction:              .byte 0
     # Initialize last known direction to avoid 180-degree turns
-    last_direction: .byte 0
+    last_direction:         .byte 0
     # Initialize no-tail-remove with 0 (remove tail normally)
-    no_tail_remove: .byte 0
+    no_tail_remove:         .byte 0
     # Difficulty level
     difficulty: .quad 5
     # Current score
     score: .quad 0
+    # Best scores
+    first_score: .quad 0
+    second_score: .quad 0
+    third_score: .quad 0
     # Mix_Chunk pointer
     wave_chunk: .quad 0
+    # Gameover screen strings
+    # Score = "Score: " + 4-digit decimal + "\0" - 12 bytes
+    player_score:   .skip 12
+    # First = "1: " + 4-digit decimal + "\0": - 8 bytes
+    first_place:    .skip 8
+    # Second = "2: " + 4-digit decimal + "\0": - 8 bytes
+    second_place:   .skip 8
+    # Third = "3: " + 4-digit decimal + "\0": - 8 bytes
+    third_place:    .skip 8
+    # New game?
+    newgame_flag:   .byte 0
+
 
 # Zero-initialized memory areas
 .bss
@@ -31,21 +47,18 @@
     block_occupied: .skip 364
     # A stack which is used for the apple lottery
     apple_lottery_stack: .skip 728
-    # Hiscore table, a quad for each of 3 scores (max points 3249, but
-    # simpler to use quads for now)
-    hiscores: .skip 24
 
 
 # Constants and program code
 .text
-    scorestr:       .asciz "Score is: %ld\n"
-    diffstr:       .asciz "Difficulty is: %ld\n"
+    scorestr:       .asciz "Score: %ld\n"
+    diffstr:       .asciz "Difficulty: %ld\n"
     # Window
     window_title: .asciz "Snake"            # window title
     .equ window_height, 384                 # window height is 384
     .equ window_width, 672                  # window width is 672
     .equ window_x, 536805376                # undefined
-    .equ window_y, 536805376                # undefined     
+    .equ window_y, 536805376                # undefined
 
     .equ bg_r, 190                          # background red
     .equ bg_g, 195                          # background green
@@ -61,23 +74,181 @@
     start_position: .word 55
 
     # game over display
-    font:	.asciz	"files/arial.ttf"
-	.equ font_size, 25
-	.equ font_color, 1536640
+    font:    .asciz    "files/nokiafc22.ttf"
+    .equ font_size, 40
+    fontcolor:      .byte 128
+                    .byte 114
+                    .byte 23
+                    .byte 255
 
-    gameover_text:	.asciz	"Game Over!"
-    .equ gameover_x, 270             
-    .equ gameover_y, 30  
-            
+
+    .equ score_x, 200       # "Score: XXXX"
+    .equ score_y, 30
+
+    .equ first_x, 255       # "1: XXXX"
+    .equ first_y, 110
+
+    .equ second_x, 245      # "2: XXXX"
+    .equ second_y, 160
+
+    .equ third_x, 245       # "3: XXXX"
+    .equ third_y, 210
+
+    newgame_text:   .asciz  "New game? (y/n)"
+    .equ newgame_x, 140
+    .equ newgame_y, 290
+
     # Sound
     mode: .string   "rb"
     soundfile: .string  "files/beep.wav"
     .equ frequency, 22050                   # frequency
-	
 
 
 
+.macro CONVERT_TO_STRING
+    # Convert digits one by one (max 4 digits here...)
+    # 4 bytes, pad with zeros, insert at [ptr...ptr+3]
+    movq    $10, %r10
+    movq    $3, %rcx
+1:
+    xorq    %rdx, %rdx
+    divq    %r10
+    addq    $0x30, %rdx
+    movb    %dl, (%r9, %rcx, 1)
+    decq    %rcx
+    cmpq    $0, %rcx
+    jge     1b
+.endm
 
+
+.macro INIT_STRINGS
+    # Build strings needed for gameover screen
+    # Player score
+    xorq    %rax, %rax
+    movb    $'S', player_score(%rax)
+    incq    %rax
+    movb    $'c', player_score(%rax)
+    incq    %rax
+    movb    $'o', player_score(%rax)
+    incq    %rax
+    movb    $'r', player_score(%rax)
+    incq    %rax
+    movb    $'e', player_score(%rax)
+    incq    %rax
+    movb    $':', player_score(%rax)
+    incq    %rax
+    movb    $' ', player_score(%rax)
+    incq    %rax
+    movb    $'0', player_score(%rax)
+    incq    %rax
+    movb    $'0', player_score(%rax)
+    incq    %rax
+    movb    $'0', player_score(%rax)
+    incq    %rax
+    movb    $'0', player_score(%rax)
+    incq    %rax
+    movb    $0, player_score(%rax)
+    # First place
+    xorq    %rax, %rax
+    movb    $'1', first_place(%rax)
+    incq    %rax
+    movb    $':', first_place(%rax)
+    incq    %rax
+    movb    $' ', first_place(%rax)
+    incq    %rax
+    movb    $'0', first_place(%rax)
+    incq    %rax
+    movb    $'0', first_place(%rax)
+    incq    %rax
+    movb    $'0', first_place(%rax)
+    incq    %rax
+    movb    $'0', first_place(%rax)
+    incq    %rax
+    movb    $0, first_place(%rax)
+    # Second place
+    xorq    %rax, %rax
+    movb    $'2', second_place(%rax)
+    incq    %rax
+    movb    $':', second_place(%rax)
+    incq    %rax
+    movb    $' ', second_place(%rax)
+    incq    %rax
+    movb    $'0', second_place(%rax)
+    incq    %rax
+    movb    $'0', second_place(%rax)
+    incq    %rax
+    movb    $'0', second_place(%rax)
+    incq    %rax
+    movb    $'0', second_place(%rax)
+    incq    %rax
+    movb    $0, second_place(%rax)
+    # Third place
+    xorq    %rax, %rax
+    movb    $'3', third_place(%rax)
+    incq    %rax
+    movb    $':', third_place(%rax)
+    incq    %rax
+    movb    $' ', third_place(%rax)
+    incq    %rax
+    movb    $'0', third_place(%rax)
+    incq    %rax
+    movb    $'0', third_place(%rax)
+    incq    %rax
+    movb    $'0', third_place(%rax)
+    incq    %rax
+    movb    $'0', third_place(%rax)
+    incq    %rax
+    movb    $0, third_place(%rax)
+.endm
+
+
+.macro PRINT_HISCORE score, string, x, y
+
+    # Insert the hiscore decimal value to string
+    movq    \string, %r9
+    addq    $3, %r9
+    movq    \score, %rax
+    CONVERT_TO_STRING
+
+    # prepare texture
+    movq    %r12, %rdi
+    movq    \string, %rsi
+    movl    fontcolor, %edx
+    call    TTF_RenderText_Solid          # returns a pointer to a surface.
+    movq    %rax, %r14                    # Save it in r14
+
+    # create texture
+    movq    %r13, %rdi                    # renderer
+    movq    %r14, %rsi                    # surface
+    call    SDL_CreateTextureFromSurface  # returns a pointer to a texture.
+    movq    %rax, %r15                    # Save it in r15
+
+
+    movl    \x, (%rsp)                 # Init dstrect
+    movl    \y, 4(%rsp)
+    movl    $0, 8(%rsp)
+    movl    $0, 12(%rsp)
+
+    movq    %r15, %rdi                 # texture
+    movl    $0, %esi
+    movl    $0, %edx
+    leaq    8(%rsp), %rcx              # Stack slot for width
+    leaq    12(%rsp), %r8              # Stack slot for height
+    call    SDL_QueryTexture           # query the attributes of the texture
+
+    # copy a portion of the texture to the current rendering target
+    movq    %r13, %rdi                 # renderer
+    movq    %r15, %rsi                 # texture
+    movq    $0, %rdx                # srcrect = NULL, entire texture
+    movq    %rsp, %rcx                 # dstrect in stack
+    call    SDL_RenderCopy
+
+    # Free surface and texture
+    movq    %r15, %rdi
+    call    SDL_DestroyTexture
+    movq    %r14, %rdi
+    call    SDL_FreeSurface
+.endm
 
 
 .macro DRAW_BLANK_SCREEN
@@ -139,6 +310,9 @@
 
 
 .macro INIT_SNAKE
+    # Reset the direction
+    movb    $0, direction
+    movb    $0, last_direction
     # The snakequeue variable should contain block numbers.
     # The queue head is in r14, tail in r15
     movq    $0, %r14
@@ -255,7 +429,7 @@
 
 
 .macro DRAW_APPLE block
-	# This macro draws one 24 x 24 pixel block of an apple using 4 8x8 blocks
+    # This macro draws one 24 x 24 pixel block of an apple using 4 8x8 blocks
     # Decoding of coordinates:
     # Keep subbing 26 from the block number until it's under 26
     # Number of these substractions is y (unscaled)
@@ -274,14 +448,14 @@
     mull    %ecx
     addw    $24, %ax                    # x
     addl    $24, %r8d                   # y
-    movw    %ax, (%rsp)                	# put x on stack
-    movl    %r8d, 4(%rsp)              	# put y on stack
+    movw    %ax, (%rsp)                    # put x on stack
+    movl    %r8d, 4(%rsp)                  # put y on stack
 
     # top block
     addw    $8, (%rsp)                  # x
     movq    %r13, %rdi                  # renderer
-    movl    $8, 8(%rsp)                	# w
-    movl    $8, 12(%rsp)               	# h
+    movl    $8, 8(%rsp)                    # w
+    movl    $8, 12(%rsp)                   # h
     movq    %rsp, %rsi
     call    SDL_RenderFillRect          # Fill the the block
 
@@ -289,25 +463,25 @@
     subw    $8, (%rsp)                  # restore x
     addw    $8, 4(%rsp)                 # y + 8
     movq    %r13, %rdi                  # renderer
-    movl    $8, 8(%rsp)                	# w
-    movl    $8, 12(%rsp)               	# h
+    movl    $8, 8(%rsp)                    # w
+    movl    $8, 12(%rsp)                   # h
     movq    %rsp, %rsi
     call    SDL_RenderFillRect          # Fill the the block
 
     # right block
     addw    $16, (%rsp)                 # x + 16
     movq    %r13, %rdi                  # renderer
-    movl    $8, 8(%rsp)                	# w
-    movl    $8, 12(%rsp)               	# h
+    movl    $8, 8(%rsp)                    # w
+    movl    $8, 12(%rsp)                   # h
     movq    %rsp, %rsi
     call    SDL_RenderFillRect          # Fill the the block
 
     # bottom block
     subw    $8, (%rsp)                  # x + 8
-    addw	$8, 4(%rsp)                 # y + 16
+    addw    $8, 4(%rsp)                 # y + 16
     movq    %r13, %rdi                  # renderer
-    movl    $8, 8(%rsp)                	# w
-    movl    $8, 12(%rsp)               	# h
+    movl    $8, 8(%rsp)                    # w
+    movl    $8, 12(%rsp)                   # h
     movq    %rsp, %rsi
     call    SDL_RenderFillRect          # Fill the the block
 .endm
@@ -349,16 +523,16 @@
     jmp     1f
 
     # B) Labels 6-9: check if illegal direction for this head in %bx
-    # Forward to game_over if it is
+    # Forward to the_end if it is
     # Otherwise calculate new position and let through
 6:
     cmpw    $26, %bx                    # Top row, 0-25
-    jl      game_over
+    jl      the_end
     subw    $26, %bx
     jmp     0f
 7:
     cmpw    $337, %bx                   # Bottom row, 338-363
-    jg      game_over
+    jg      the_end
     addw    $26, %bx
     jmp     0f
 8:
@@ -368,7 +542,7 @@
     movq    $26, %rsi                   # Left column, multiples of 26
     divq    %rsi
     cmpq    $0, %rdx                    # Expect remainder to not be 0
-    je      game_over
+    je      the_end
     subw    $1, %bx
     jmp     0f
 9:
@@ -378,7 +552,7 @@
     movq    $26, %rsi                   # Right column, multiples of 26
     divq    %rsi                        # plus 25
     cmpq    $25, %rdx                   # Expect remainder to not be 25
-    je      game_over
+    je      the_end
     addw    $1, %bx
     jmp     0f
 
@@ -400,12 +574,12 @@
 6:
 
     # D) Check the new head and see if there was already a snake block
-    # Forward to game_over if there was
+    # Forward to the_end if there was
     # Otherwise ENQUEUE and let through
     xorq    %rax, %rax
     movb    block_occupied(%rbx), %al
     cmpb    $0, %al
-    jne     game_over
+    jne     the_end
     ENQUEUE %bx
 
     # E) Check for apple under the new head
@@ -415,25 +589,33 @@
     cmpw    %cx, %bx                        # Match with head
     jne     2f
     DISPATCH_APPLE
-    
+
     # Beep
     movq    wave_chunk, %rdi                # Mix_Chunk pointer
-    call    Mix_FreeChunk                   # Free the memory used in chunk, and free chunk as well
+    call    Mix_FreeChunk                   # Free the memory used in chunk,
+                                            # and free chunk as well
 
     movq    $soundfile, %rdi                # File
     movq    $mode, %rsi                     # Mode (rb: read as binary)
-    call    SDL_RWFromFile                  # Returns a pointer to the SDL_RWops structure
+    call    SDL_RWFromFile                  # Returns a pointer to the
+                                            # SDL_RWops structure
 
     movq    %rax, %rdi                      # Source
-    movl    $1, %esi                        # A non-zero value : automatically close/open the src
-    call    Mix_LoadWAV_RW                  # Returns pointer to the sample as Mix_Chunk
-    movq    %rax, wave_chunk                # Put this pointer in variable for later use 
+    movl    $1, %esi                        # A non-zero value : automatically
+                                            # close/open the src
+    call    Mix_LoadWAV_RW                  # Returns pointer to the sample as
+                                            # Mix_Chunk
+    movq    %rax, wave_chunk                # Put this pointer in variable for
+                                            # later use
 
-    movl    $-1, %ecx                       # Channel -1: pick the first free unreserved channel
+    movl    $-1, %ecx                       # Channel -1: pick the first free
+                                            # unreserved channel
     movq    wave_chunk, %rsi                # Mix_Chunk pointer
     movl    $0, %edx                        # 0 loops: play loop+1 times
     movl    $-1, %edi                       # Ticks set to -1: play forever
-    call    Mix_PlayChannelTimed            # Returns he channel the sample is played on. Returns -1 in case of errors
+    call    Mix_PlayChannelTimed            # Returns he channel the sample
+                                            # is played on. Returns -1 in case
+                                            # of errors
 
     # Increment score
     movw    difficulty, %cx
@@ -493,17 +675,15 @@ main:
 
     # get command line args : set difficulty if between 1-9
     # corresponds to second arg: argv[1]
+    cmpq    $2, %rdi                # argc below 2 = no args
+    jl      no_args
     xorq    %rbx, %rbx
     movq    8(%rsi), %rcx           # argv is in %rcx now
     movb    (%rcx), %bl             # The first char of arguments
     subq    $0x30, %rbx             # Convert to decimal
 
-    movq    %rbx, %rsi              # Display difficulty in terminal
-    movq    $diffstr, %rdi         	# first arg for printf
-    movq    $0, %rax                # no vectors
-    call    printf                  # print
 
-    cmpq    $5, %rbx
+    cmpq    $1, %rbx
     jl      no_args
     cmpq    $9, %rbx
     jg      no_args
@@ -511,20 +691,23 @@ main:
 
 
 no_args:
+    movq    $diffstr, %rdi             # first arg for printf
+    movq    difficulty, %rsi        # Display difficulty in terminal
+    movq    $0, %rax                # no vectors
+    call    printf                  # print
+
     # SDL_INIT_EVERYTHING = 0x7231
-    movl	$0x7231, %edi
+    movl    $0x7231, %edi
     # Init SDL
-    call	SDL_Init
+    call    SDL_Init
 
     # Init sound
     movl    $frequency, %edi        # Frequency in Hz
-    movl    $32784, %esi            # Format (MIX_DEFAULT_FORMAT)
+    movl    $0x8010, %esi           # Format (MIX_DEFAULT_FORMAT)
     movl    $2, %edx                # Channels 2 for stereo
     movl    $4096, %ecx             # Chunksize: bytes used for output sample
     call    Mix_OpenAudio           # Returns 0 on success, -1 on errors
 
-    # Init Score
-    movq    $0, score
     # Create window
     # Parameters go to rdi, rsi, rdx, rcx, r8 and r9;
     # SDL_CreateWindow wants window title, x, y, width, height and flags
@@ -541,11 +724,11 @@ no_args:
 
     # Create renderer
     # SDL_CreateRenderer wants the window, index, and flags
-    # SDL_RENDER_ACCELERATED = 0x2
+    # SDL_RENDER_ACCELERATED = 2
     # First suitable rendering driver = -1
     movq    %r12, %rdi
     movl    $-1, %esi
-    movl    $0x2, %edx
+    movl    $2, %edx
     call    SDL_CreateRenderer
     # This returns a pointer to a renderer. Save it in r13:
     movq    %rax, %r13
@@ -553,7 +736,24 @@ no_args:
     # Use stack to store the needed rectangle structures as x, y, w, h
     subq    $16, %rsp
 
+    # Initialize hiscores
+    movq    $0, first_score
+    movq    $0, second_score
+    movq    $0, third_score
+
 game_start:
+    # Init Score
+    movq    $0, score
+    # Init starting time
+    movl    $0, last_time
+    # Init occupied blocks
+    movq    $364, %rcx
+block_init_loop:
+    decq    %rcx
+    movb    $0, block_occupied(, %rcx, 1)
+    cmpq    $0, %rcx
+    jne     block_init_loop
+    # Init game elements and draw the first frame
     INIT_SNAKE
     DISPATCH_APPLE
     DRAW_GAME_TICK
@@ -613,12 +813,10 @@ eventcheck:
     cmpb    $1, 82(%rax)
     je      up_pressed
     cmpb    $1, 41(%rax)
-    je      end_destroy
+    je      the_end
     jmp     proceed
 
     # Update direction vector if it isn't a 180 degree turn
-    # *** TODO *** If user first presses something else, then a 180 turn
-    # goes through => game over
 right_pressed:
     movb    last_direction, %al
     cmpb    $1, %al
@@ -660,15 +858,8 @@ do_gametick:
     jmp     loop
 
 
-end_destroy:
-    # Call game_over with this score and the hiscore table to display hiscores
-    # It should return a selection in %rax
-    # 0 for exit, 1 for retry
-    #movq    score, %rsi
-    #movq    hiscores, %rdi
-    #call    game_over
-    #jnz     %rax, game_start
 
+quit:
     # Destroy renderer
     movq    %r13, %rdi
     call    SDL_DestroyRenderer
@@ -676,9 +867,11 @@ end_destroy:
     movq    %r12, %rdi
     call    SDL_DestroyWindow
 
-    call Mix_CloseAudio             # Shutdown and close the mixer API
+    movq    $0, %rdi
+    call    Mix_CloseAudio          # Shutdown and close the mixer API
 
     # Shut down SDL
+    movq    $0, %rdi
     call    SDL_Quit
     movq    score, %rsi             # Display score in terminal
     movq    $scorestr, %rdi         # first arg for printf
@@ -689,111 +882,262 @@ end_destroy:
     call    exit
 
 
-
+# **************************************************************************** #
 #
-# A subroutine to display hiscores and play again/exit
+#   Display hiscores and choose to play again/exit
 #
-game_over:
+# **************************************************************************** #
+the_end:
 
-	# destroy old render
-	movq    %r13, %rdi
-    call    SDL_DestroyRenderer
+    pushq   %r12                    # Put these to safety
+    pushq   %r13
+    pushq   %r14
+    pushq   %r15
+    pushq   %rbx
+    pushq   %rdi
+    pushq   %rsi
+
+    pushq   %rbp                    # New "stackframe"
+    movq    %rsp, %rbp
+
+# **************************************************************************** #
+
+    # Check if we made the hiscores
+    movq    score, %rax
+
+    movq    first_score, %rdx
+    cmpq    %rdx, %rax                  # First place?
+    jg      st_place
+
+    movq    second_score, %rdx
+    cmpq    %rdx, %rax                  # Second place?
+    jg      nd_place
+
+    movq    third_score, %rdx
+    cmpq    %rdx, %rax                  # Third place?
+    jg      rd_place
+
+    jmp     gameover_screen
+
+st_place:
+    movq    second_score, %rax          # Move 2nd to 3rd
+    movq    %rax, third_score
+
+    movq    first_score, %rax           # Move 1st to 2nd
+    movq    %rax, second_score
+
+    movq    score, %rax                 # Replace 1st
+    movq    %rax, first_score
+
+    jmp     gameover_screen
+
+nd_place:
+    movq    second_score, %rax          # Move 2nd to 3rd
+    movq    %rax, third_score
+
+    movq    score, %rax                 # Replace 2nd
+    movq    %rax, second_score
+
+    jmp     gameover_screen
+
+rd_place:
+    movq    score, %rax                 # Replace 3rd
+    movq    %rax, third_score
+
+    jmp     gameover_screen
+
+gameover_screen:
+
+    # Initialize gameover strings
+    INIT_STRINGS
 
     # init ttf
-	call	TTF_Init
+    call    TTF_Init
 
-	movq    %r12, %rdi 				# window pointer arg
-    movl    $-1, %esi				# First suitable rendering driver = -1
-    movl    $0x2, %edx				# SDL_RENDER_ACCELERATED = 0x2
-    call    SDL_CreateRenderer
-	movq	%rax, %rbx 				# returns a pointer to a renderer. Save it in rbx
-	
-	# background color
-	movq    %rbx, %rdi
+    # Set color for background
+    # SDL_SetRenderDrawColor wants the renderer, r, g, b, and a
+    movq    %r13, %rdi
     movl    $bg_r, %esi
     movl    $bg_g, %edx
     movl    $bg_b, %ecx
     movl    $bg_a, %r8d
     call    SDL_SetRenderDrawColor
 
-    # Draw background
-    movq    %rbx, %rdi
+    # Clear background
+    movq    %r13, %rdi
     call    SDL_RenderClear
 
     # create font
-	movl	$font_size, %esi	
-	movq	$font, %rdi
-	call	TTF_OpenFont
-	movq	%rax, %r13 				# returns a pointer to a font. Save it in r13
+    movq    $font, %rdi
+    movl    $font_size, %esi
+    call    TTF_OpenFont                  # returns a pointer to a font.
+    movq    %rax, %r12                    # Save it in r12
 
-	# prepare texture
-	movl	$font_color, %edx
-	movq	$gameover_text, %rsi
-	movq	%r13, %rdi
-	call	TTF_RenderText_Solid
-	movq	%rax, %r14				# returns a pointer to a font. Save it in r14
-
-	# create texture
-	movq	%r14, %rsi
-	movq	%rbx, %rdi
-	call	SDL_CreateTextureFromSurface
-	movq	%rax, %rbp 				# returns a pointer to a texture. Save it in rbp
-
-	movl	$0, 28(%rsp)
-	movl	$0, 24(%rsp)
+    subq    $16, %rsp                     # Space for dstrect
 
 
-	leaq	28(%rsp), %rcx
-	leaq	24(%rsp), %r8
 
-	movl	$0, %edx				# pointer height 0
-	movl	$0, %esi				# pointer width 0
-	movq	%rbp, %rdi 				# texture
-	call	SDL_QueryTexture 		# query the attributes of the texture
 
-	movl	$gameover_x, (%rsp)
-	movl	$gameover_y, 4(%rsp)
 
-	# get the dimensions of the texture
-	movl	28(%rsp), %eax
-	movl	%eax, 8(%rsp)
-	movl	24(%rsp), %eax
-	movl	%eax, 12(%rsp)
 
-	# copy a portion of the texture to the current rendering target
-	movq	%rsp, %rcx 				# constant dstrect
-	movl	$0, %edx				# constant srcrect
-	movq	%rbx, %rdi 				# renderer
-	movq	%rbp, %rsi 				# texture
-	call	SDL_RenderCopy
+    #
+    # "Score: {{score}}"
+    #
 
-	# update the screen with any rendering performed
-	movq	%rbx, %rdi 				# renderer
-	call	SDL_RenderPresent
+    # Insert score to player_score string
+    movq    $player_score, %r9
+    # Magic number 7 because number goes in bytes 7-11 of this string
+    addq    $7, %r9
+    movq    score, %rax
+    CONVERT_TO_STRING
 
-	# check if user wants to exit
+
+    # prepare texture
+    movq    %r12, %rdi
+    movq    $player_score, %rsi
+    movl    fontcolor, %edx
+    call    TTF_RenderText_Solid          # returns a pointer to a surface.
+    movq    %rax, %r14                    # Save it in r14
+
+    # create texture
+    movq    %r13, %rdi                    # renderer
+    movq    %r14, %rsi                    # surface
+    call    SDL_CreateTextureFromSurface  # returns a pointer to a texture.
+    movq    %rax, %r15                    # Save it in r15
+
+
+    movl    $score_x, (%rsp)           # Init dstrect
+    movl    $score_y, 4(%rsp)
+    movl    $0, 8(%rsp)
+    movl    $0, 12(%rsp)
+
+    movq    %r15, %rdi                 # texture
+    movl    $0, %esi                   # these params not needed
+    movl    $0, %edx
+    leaq    8(%rsp), %rcx              # Stack slot for width
+    leaq    12(%rsp), %r8              # Stack slot for height
+    call    SDL_QueryTexture           # query the attributes of the texture
+
+    # copy the texture to the current rendering target
+    movq    %r13, %rdi                 # renderer
+    movq    %r15, %rsi                 # texture
+    movq    $0, %rdx                # srcrect = NULL, entire texture
+    movq    %rsp, %rcx                 # dstrect in stack
+    call    SDL_RenderCopy
+
+    # Free surface and texture
+    movq    %r15, %rdi
+    call    SDL_DestroyTexture
+    movq    %r14, %rdi
+    call    SDL_FreeSurface
+
+
+
+    # Print out hiscores
+    PRINT_HISCORE first_score, $first_place, $first_x, $first_y
+    PRINT_HISCORE second_score, $second_place, $second_x, $second_y
+    PRINT_HISCORE third_score, $third_place, $third_x, $third_y
+
+
+
+
+
+    #
+    # "New game? (y/n)"
+    #
+
+    # prepare texture
+    movq    %r12, %rdi
+    movq    $newgame_text, %rsi
+    movl    fontcolor, %edx
+    call    TTF_RenderText_Solid          # returns a pointer to a surface.
+    movq    %rax, %r14                    # Save it in r14
+
+    # create texture
+    movq    %r13, %rdi                    # renderer
+    movq    %r14, %rsi                    # surface
+    call    SDL_CreateTextureFromSurface  # returns a pointer to a texture.
+    movq    %rax, %r15                    # Save it in r15
+
+
+    movl    $newgame_x, (%rsp)         # Init dstrect
+    movl    $newgame_y, 4(%rsp)
+    movl    $0, 8(%rsp)
+    movl    $0, 12(%rsp)
+
+    movq    %r15, %rdi                 # texture
+    movl    $0, %esi
+    movl    $0, %edx
+    leaq    8(%rsp), %rcx              # Stack slot for width
+    leaq    12(%rsp), %r8              # Stack slot for height
+    call    SDL_QueryTexture           # query the attributes of the texture
+
+    # copy  the texture to the current rendering target
+    movq    %r13, %rdi                 # renderer
+    movq    %r15, %rsi                 # texture
+    movq    $0, %rdx                # srcrect = NULL, entire texture
+    movq    %rsp, %rcx                 # dstrect in stack
+    call    SDL_RenderCopy
+
+    # Free surface and texture
+    movq    %r15, %rdi
+    call    SDL_DestroyTexture
+    movq    %r14, %rdi
+    call    SDL_FreeSurface
+
+
+
+
+
+
+    # update the screen with any rendering performed
+    movq    %r13, %rdi                 # renderer
+    call    SDL_RenderPresent
+
+    # check if user wants to exit
 loop_gameover:
-	movq    $0, %rdi
+    movq    $0, %rdi
     call    SDL_PumpEvents
     # Check keycode table
     movq    $0, %rdi
     call    SDL_GetKeyboardState
+    # SDL_SCANCODE_Y = 28
+    cmpb    $1, 28(%rax)
+    je      new_game
+    # SDL_SCANCODE_N = 17
+    cmpb    $1, 17(%rax)
+    je      no_new_game
+    jmp     loop_gameover
 
-    cmpb    $1, 41(%rax)
-    je      end_gameover
-    jmp 	loop_gameover
+new_game:
+    movb    $1, newgame_flag
+    jmp     end_gameover
+
+no_new_game:
+    movb    $0, newgame_flag
+    jmp     end_gameover
 
 
-    # destroy everything
+    # close font
 end_gameover:
-	movq	%rbp, %rdi
-	call	SDL_DestroyTexture
+    movq    %r12, %rdi
+    call    TTF_CloseFont
+    call    TTF_Quit
 
-	movq	%r14, %rdi
-	call	SDL_FreeSurface
+# **************************************************************************** #
 
-	movq	%r13, %rdi
-	call	TTF_CloseFont
+    movq    %rbp, %rsp              # Tear down stackframe
+    popq    %rbp
 
-	call	TTF_Quit
-	jmp 	end_destroy
+    popq    %rsi                    # Restore old regs
+    popq    %rdi
+    popq    %rbx
+    popq    %r15
+    popq    %r14
+    popq    %r13
+    popq    %r12
+
+    movb    newgame_flag, %al
+    test    %al, %al
+    jnz     game_start
+    jmp     quit
