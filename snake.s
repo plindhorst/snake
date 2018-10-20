@@ -21,7 +21,7 @@
     second_score:           .quad 0
     third_score:            .quad 0
 
-    # Mix_Chunk pointer for sound
+    # Beep pointer for sound
     beep_pointer:             .quad 0
 
     # Gameover screen strings
